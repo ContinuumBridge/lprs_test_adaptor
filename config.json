@@ -1,0 +1,11 @@
+{
+    "exe": "adaptor.py", 
+    "protocol": "peripheral", 
+    "name": "LPRS Tester", 
+    "device_resource": "/api/bridge/v1/device/60", 
+    "url": "https://github.com/ContinuumBridge/lprs_test_adaptor/archive/v1.0.0.tar.gz", 
+    "version": "1.0.0", 
+    "provider": "ContinuumBridge", 
+    "adaptor_resource": "/api/bridge/v1/adaptor/23", 
+    "description": "Sends and receives bytes to USB series device"
+}
