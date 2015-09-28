@@ -21,16 +21,7 @@ class Adaptor(CbAdaptor):
         self.stop = False
         self.apps =             {"rssi": []}
         self.toSend = 0
-        self.ser = serial.Serial(
-            port='/dev/ttyUSB0',
-            baudrate= 19200,
-            parity=serial.PARITY_NONE,
-            stopbits=serial.STOPBITS_ONE,
-            bytesize=serial.EIGHTBITS,
-            timeout = 0.5
-        )
-        reactor.callLater(1, self.initialise)
-        reactor.callInThread(self.listen)
+        reactor.callLater(0.5, self.initRadio)
         # super's __init__ must be called:
         #super(Adaptor, self).__init__(argv)
         CbAdaptor.__init__(self, argv)
@@ -57,12 +48,28 @@ class Adaptor(CbAdaptor):
         for a in self.apps[characteristic]:
             self.sendMessage(msg, a)
 
-    def initialise(self):
-        self.ser.write("ER_CMD#a01")
-        time.sleep(2)
-        self.ser.write("ACK")
-        reactor.callLater(2, self.sendData)
-        self.cbLog("info", "Radio initialised")
+    def initRadio(self):
+        try:
+            self.ser = serial.Serial(
+                port='/dev/ttyUSB0',
+                baudrate= 19200,
+                parity=serial.PARITY_NONE,
+                stopbits=serial.STOPBITS_ONE,
+                bytesize=serial.EIGHTBITS,
+                timeout = 0.5
+            )
+            reactor.callInThread(self.listen)
+        except Exception as ex:
+            self.cbLog("error", "Problems setting up serial port. Exception: " + str(type(ex)) + ", " + str(ex.args))
+        else:
+            try:
+                self.ser.write("ER_CMD#a01")
+                time.sleep(2)
+                self.ser.write("ACK")
+                reactor.callLater(2, self.sendData)
+                self.cbLog("info", "Radio initialised")
+            except Exception as ex:
+                self.cbLog("warning", "Unable to initialise radio. Exception: " + str(type(ex)) + ", " + str(ex.args))
 
     def listen(self):
         # Called in thread
@@ -81,11 +88,14 @@ class Adaptor(CbAdaptor):
             time.sleep(0.1)
 
     def sendData(self):
-        self.toSend = (self.toSend + 1)%256
-        dat = str(hex(self.toSend)[2:])
-        self.cbLog("debug", "sending: " + dat)
-        self.ser.write(dat)
-        reactor.callLater(2, self.sendData)
+        try:
+            self.toSend = (self.toSend + 1)%256
+            dat = str(hex(self.toSend)[2:])
+            self.cbLog("debug", "sending: " + dat)
+            self.ser.write(dat)
+            reactor.callLater(2, self.sendData)
+        except Exception as ex:
+            self.cbLog("warning", "Unable to send data. Exception: " + str(type(ex)) + ", " + str(ex.args))
 
     def onAppInit(self, message):
         """
