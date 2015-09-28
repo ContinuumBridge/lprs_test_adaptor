@@ -63,9 +63,16 @@ class Adaptor(CbAdaptor):
             self.cbLog("error", "Problems setting up serial port. Exception: " + str(type(ex)) + ", " + str(ex.args))
         else:
             try:
+                # Send RSSI with every packet received
                 self.ser.write("ER_CMD#a01")
                 time.sleep(2)
                 self.ser.write("ACK")
+                time.sleep(2)
+                # Set bandwidth to 12.5 KHz
+                self.ser.write("ER_CMD#B0")
+                time.sleep(2)
+                self.ser.write("ACK")
+                time.sleep(2)
                 reactor.callLater(2, self.sendData)
                 self.cbLog("info", "Radio initialised")
             except Exception as ex:
