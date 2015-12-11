@@ -14,6 +14,7 @@ from twisted.internet import threads
 from twisted.internet import reactor
 
 LPRS_TYPE = os.getenv('CB_LPRS_TYPE', 'ERIC')
+LPRS_ROLE = os.getenv('CB_LPRS_ROLE', 'SLAVE')
 
 class Adaptor(CbAdaptor):
     def __init__(self, argv):
@@ -50,6 +51,7 @@ class Adaptor(CbAdaptor):
             self.sendMessage(msg, a)
 
     def initRadio(self):
+        self.cbLog("info", "LPRS_ROLE: " + LPRS_ROLE)
         try:
             self.ser = serial.Serial(
                 port='/dev/ttyUSB0',
@@ -67,53 +69,68 @@ class Adaptor(CbAdaptor):
                 # Send RSSI with every packet received
                 if LPRS_TYPE == "ERA":
                     self.ser.write("ER_CMD#a01")
-                    time.sleep(2)
+                    time.sleep(1)
                     self.ser.write("ACK")
-                    time.sleep(2)
+                    time.sleep(1)
                 # Set bandwidth to 12.5 KHz
                 self.ser.write("ER_CMD#B0")
-                time.sleep(2)
+                time.sleep(1)
                 self.ser.write("ACK")
-                time.sleep(2)
-                reactor.callLater(2, self.sendData)
+                time.sleep(1)
+                if LPRS_ROLE == "MASTER":
+                    reactor.callLater(1, self.send)
                 self.cbLog("info", "Radio initialised")
             except Exception as ex:
                 self.cbLog("warning", "Unable to initialise radio. Exception: " + str(type(ex)) + ", " + str(ex.args))
 
     def listen(self):
         # Called in thread
-        listen_txt = ''
         while not self.doStop:
-            listen_txt += self.ser.read(256)
-            if not self.doStop:
-                if listen_txt !='':
-                    self.cbLog("debug",  "rssi: " + str(listen_txt))
-                    #rssi = ord(listen_txt[0])
-                    #message = listen_txt[1:]
-                    #self.cbLog("debug",  "rssi: " + str(rssi) + ", message: " + message)
-                    #self.sendCharacteristic("rssi", rssi, time.time())
-                    listen_txt = ''
-            #time.sleep(0.1)
+            try:
+                listen_txt = ''
+                listen_txt += self.ser.read(1)
+                time.sleep(0.001)
+                while self.ser.inWaiting() > 0:
+                    time.sleep(0.001)
+                    listen_txt += self.ser.read(1)
+            except Exception as ex:
+                reactor.callFromThread(self.cbLog, "warning", "Problem in listen. Exception: " + str(type(ex)) + ", " + str(ex.args))
+            if listen_txt !='':
+                reactor.callFromThread(self.cbLog, "debug",  "received: " + str(listen_txt))
+                if LPRS_ROLE == "SLAVE":
+                    reactor.callLater(1, self.send, listen_txt)
+                else:
+                    if listen_txt.startswith("ER_CMD#T8"):
+                        reactor.callFromThread(self.cbLog, "debug",  "rssi message")
+                        if (len(listen_txt) > 9) and (len(listen_txt) < 16):
+                            rssi = listen_txt[9:]
+                            reactor.callFromThread(self.cbLog, "debug",  "rssi: " + str(rssi))
+                            reactor.callFromThread(self.sendCharacteristic, "rssi", rssi, time.time())
+                    else:
+                        reactor.callFromThread(self.rssi)
 
-    def sendData(self):
+    def send(self, dat=None):
         try:
-            self.toSend = (self.toSend + 1)%256
-            dat = str(hex(self.toSend)[2:])
+            if not dat:
+                self.toSend = (self.toSend + 1)%256
+                dat = str(hex(self.toSend)[2:])
             self.cbLog("debug", "sending: " + dat)
             self.ser.write(dat)
+            if LPRS_ROLE == "MASTER":
+                reactor.callLater(5, self.send)
         except Exception as ex:
             self.cbLog("warning", "Unable to send data. Exception: " + str(type(ex)) + ", " + str(ex.args))
-        reactor.callLater(1, self.readRSSI)
 
-    def readRSSI(self):
+    def rssi(self):
         # RSSI of last packet
         try:
             dat = "ER_CMD#T8" 
             self.cbLog("debug", "sending: " + dat)
             self.ser.write(dat)
+            time.sleep(0.2)
+            self.ser.write("ACK")
         except:
             self.cbLog("warning", "Unable to read RSSI. Exception: " + str(type(ex)) + ", " + str(ex.args))
-        reactor.callLater(1, self.sendData)
 
     def onAppInit(self, message):
         """
