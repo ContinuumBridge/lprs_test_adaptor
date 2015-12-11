@@ -115,7 +115,7 @@ class Adaptor(CbAdaptor):
             self.cbLog("debug", "sending: " + dat)
             self.ser.write(dat)
             if LPRS_ROLE == "MASTER":
-                reactor.callLater(10, self.send)
+                reactor.callLater(5, self.send)
         except Exception as ex:
             self.cbLog("warning", "Unable to send data. Exception: " + str(type(ex)) + ", " + str(ex.args))
 
