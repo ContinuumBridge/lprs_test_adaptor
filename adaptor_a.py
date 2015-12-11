@@ -78,7 +78,7 @@ class Adaptor(CbAdaptor):
                 self.ser.write("ACK")
                 time.sleep(1)
                 if LPRS_ROLE == "MASTER":
-                    reactor.callLater(1, self.send)
+                    reactor.callLater(5, self.send)
                 self.cbLog("info", "Radio initialised")
             except Exception as ex:
                 self.cbLog("warning", "Unable to initialise radio. Exception: " + str(type(ex)) + ", " + str(ex.args))
@@ -89,9 +89,9 @@ class Adaptor(CbAdaptor):
             try:
                 listen_txt = ''
                 listen_txt += self.ser.read(1)
-                time.sleep(0.001)
+                time.sleep(0.005)
                 while self.ser.inWaiting() > 0:
-                    time.sleep(0.001)
+                    time.sleep(0.005)
                     listen_txt += self.ser.read(1)
             except Exception as ex:
                 reactor.callFromThread(self.cbLog, "warning", "Problem in listen. Exception: " + str(type(ex)) + ", " + str(ex.args))
@@ -100,24 +100,22 @@ class Adaptor(CbAdaptor):
                 if LPRS_ROLE == "SLAVE":
                     reactor.callLater(1, self.send, listen_txt)
                 else:
-                    if listen_txt.startswith("ER_CMD#T8"):
-                        reactor.callFromThread(self.cbLog, "debug",  "rssi message")
-                        if (len(listen_txt) > 9) and (len(listen_txt) < 16):
-                            rssi = listen_txt[9:]
-                            reactor.callFromThread(self.cbLog, "debug",  "rssi: " + str(rssi))
-                            reactor.callFromThread(self.sendCharacteristic, "rssi", rssi, time.time())
-                    else:
+                    if "dBm" in listen_txt:
+                        rssi = listen_txt
+                        reactor.callFromThread(self.cbLog, "debug",  "rssi: " + str(rssi))
+                        reactor.callFromThread(self.sendCharacteristic, "rssi", rssi, time.time())
+                    elif listen_txt.startswith("CB"):
                         reactor.callFromThread(self.rssi)
 
     def send(self, dat=None):
         try:
             if not dat:
                 self.toSend = (self.toSend + 1)%256
-                dat = str(hex(self.toSend)[2:])
+                dat = "CB" + str(hex(self.toSend)[2:])
             self.cbLog("debug", "sending: " + dat)
             self.ser.write(dat)
             if LPRS_ROLE == "MASTER":
-                reactor.callLater(5, self.send)
+                reactor.callLater(10, self.send)
         except Exception as ex:
             self.cbLog("warning", "Unable to send data. Exception: " + str(type(ex)) + ", " + str(ex.args))
 
@@ -127,10 +125,16 @@ class Adaptor(CbAdaptor):
             dat = "ER_CMD#T8" 
             self.cbLog("debug", "sending: " + dat)
             self.ser.write(dat)
-            time.sleep(0.2)
+            reactor.callLater(0.5, self.rssiAck)
+        except:
+            self.cbLog("warning", "Unable to write RSSI. Exception: " + str(type(ex)) + ", " + str(ex.args))
+
+    def rssiAck(self):
+        # RSSI of last packet
+        try:
             self.ser.write("ACK")
         except:
-            self.cbLog("warning", "Unable to read RSSI. Exception: " + str(type(ex)) + ", " + str(ex.args))
+            self.cbLog("warning", "Unable to ack RSSI. Exception: " + str(type(ex)) + ", " + str(ex.args))
 
     def onAppInit(self, message):
         """
